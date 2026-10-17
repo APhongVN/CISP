@@ -48,57 +48,7 @@ app = Flask(__name__)
 app.secret_key = app_secret
 
 
-# =============== BASIC AUTH ===============
-# =============== SESSION AUTH ===============
-@app.before_request
-def _require_login():
-    if request.path in ("/favicon.ico", "/logo/bk", "/logo/cisp", "/header_bg", "/login"):
-        return
-    if request.path.startswith("/announce_file/"):
-        return
-    if not session.get("student_id"):
-        return redirect("/login")
 
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    if request.method == "POST":
-        username = request.form.get("username", "").strip()
-        password = request.form.get("password", "")
-        import hashlib
-        pw_hash = hashlib.sha256(password.encode('utf-8')).hexdigest()
-        
-        try:
-            res = supabase.table("users").select("*").eq("username", username).eq("password", pw_hash).execute()
-            if res.data and res.data[0]["role"] == "student":
-                user = res.data[0]
-                session["student_id"] = user["id"]
-                session["student_name"] = user["full_name"]
-                return redirect("/")
-            else:
-                return "Sai tên đăng nhập hoặc mật khẩu! <a href='/login'>Thử lại</a>"
-        except Exception as e:
-            import traceback
-            error_msg = traceback.format_exc()
-            print("=== LOI DANG NHAP ===")
-            print(error_msg)
-            return f"Lỗi kết nối Server! Chi tiết lỗi: <br><br> <b style='color:red'>{e}</b> <br><br><a href='/login'>Thử lại</a>"
-    
-    return '''
-    <div style="max-width:400px;margin:100px auto;padding:30px;background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.1);text-align:center;font-family:sans-serif;">
-        <h2 style="color:#0033A0;margin-bottom:20px;">CỔNG THÔNG TIN SINH VIÊN</h2>
-        <form method="POST">
-            <input type="text" name="username" placeholder="Mã sinh viên (MSSV)" required style="width:100%;padding:12px;margin-bottom:15px;border:1px solid #ccc;border-radius:8px;box-sizing:border-box;"><br>
-            <input type="password" name="password" placeholder="Mật khẩu" required style="width:100%;padding:12px;margin-bottom:20px;border:1px solid #ccc;border-radius:8px;box-sizing:border-box;"><br>
-            <button type="submit" style="width:100%;padding:12px;background:#0033A0;color:white;border:none;border-radius:8px;font-weight:bold;cursor:pointer;">ĐĂNG NHẬP</button>
-        </form>
-    </div>
-    '''
-
-@app.route("/logout")
-def logout():
-    session.clear()
-    return redirect("/login")
-# =============== END SESSION AUTH ===============
 TEACHER_NAME = "Nguyễn Thanh Hải"
 
 # ── Thống kê CTĐT ──
@@ -781,7 +731,84 @@ def favicon():
 
 @app.route("/")
 def home():
-    return redirect("/me")
+    students = load_students()
+    students.sort(key=lambda s: _sort_key(s.get("name", "")))
+    kw = (request.args.get("q") or "").strip().lower()
+    if kw:
+        students = [s for s in students if kw in (s.get("name", "") or "").lower()]
+
+    all_stu = load_students()
+    total = len(all_stu)
+    n_dat = 0; n_rot = 0
+    for s in all_stu:
+        g = _gpa(s.get("scores", {}))
+        if g == 0: continue
+        if g >= 2.0: n_dat += 1
+        else: n_rot += 1
+    rate = f"{n_dat}/{total}" if total else "—"
+    rc = "#16A34A" if n_rot == 0 and n_dat > 0 else ("#F59E0B" if n_rot <= max(1, total // 5) else "#DC2626")
+
+    stats = f'''
+    <div class="stats">
+      <div class="stat" style="--a:#2563EB"><div class="stat-ic">👨‍🎓</div><div class="stat-v" style="color:#2563EB">{total}</div><div class="stat-l">Tổng sinh viên</div></div>
+      <div class="stat" style="--a:#16A34A"><div class="stat-ic">📚</div><div class="stat-v" style="color:#16A34A">{TOTAL_SUBJECTS}</div><div class="stat-l">Học phần</div></div>
+      <div class="stat" style="--a:#D4A000"><div class="stat-ic">🎯</div><div class="stat-v" style="color:#D4A000">{TOTAL_CREDITS}</div><div class="stat-l">Tín chỉ</div></div>
+      <div class="stat" style="--a:{rc}"><div class="stat-ic">🏆</div><div class="stat-v" style="color:{rc}">{rate}</div><div class="stat-l">Tỷ lệ đạt</div></div>
+    </div>'''
+
+    leaders = [s for s in all_stu if s.get("role") == "lt"]
+    vices = [s for s in all_stu if s.get("role") == "lp"]
+    roles_html = ""
+    if leaders or vices:
+        parts = []
+        if leaders: parts.append(f'👑 Lớp trưởng: <b>{", ".join(s["name"] for s in leaders)}</b>')
+        if vices: parts.append(f'⭐ Lớp phó: <b>{", ".join(s["name"] for s in vices)}</b>')
+        roles_html = f'<div style="background:#EFF6FF;border-radius:10px;padding:12px 18px;margin-bottom:16px;font-size:13px;font-weight:700;color:#0033A0">{" &nbsp;•&nbsp; ".join(parts)}</div>'
+
+    if not students:
+        msg = "Không tìm thấy sinh viên" if kw else "Chưa có sinh viên"
+        items = f'<div class="empty"><div class="empty-ic">📭</div><div>{msg}</div></div>'
+    else:
+        rows = []
+        role_map = {"lt": "Lớp trưởng", "lp": "Lớp phó", "tv": "Thành viên"}
+        for s in students:
+            nm = s.get("name", "?")
+            col = _avatar_color(nm)
+            ini = _initial(nm)
+            role = s.get("role", "tv")
+            rl = role_map.get(role, "Thành viên")
+            badge = " 👑" if role == "lt" else (" ⭐" if role == "lp" else "")
+            safe_nm = nm.replace("&", "&amp;").replace('"', "&quot;")
+            rows.append(f'<a class="stu" href="/me?name={safe_nm}"><div class="stu-av" style="background:{col}">{ini}</div><div class="stu-info"><div class="stu-nm">{nm}{badge}</div><div class="stu-rl">{rl}</div></div></a>')
+        items = f'<div class="grid" id="sg">{"".join(rows)}</div>'
+        items += '<div class="empty" id="em" style="display:none"><div class="empty-ic">🔍</div><div>Không tìm thấy</div></div>'
+
+    notif_html = _notif_panel_html()
+    body = stats + f'''
+    <div class="layout-2col">
+      <div class="card" style="margin-bottom:0">
+        <div class="card-h"><h2>📋 Danh sách sinh viên ({len(students)})</h2></div>
+        {roles_html}
+        <div class="srch"><input id="q" placeholder="🔍 Nhập tên sinh viên..." oninput="filt(this.value)" autofocus></div>
+        {items}
+      </div>
+      <div>
+        {notif_html}
+      </div>
+    </div>
+    <script>
+    function filt(v){{
+      v=v.toLowerCase().trim();
+      var n=0;
+      document.querySelectorAll('#sg .stu').forEach(function(el){{
+        var m=!v||el.textContent.toLowerCase().includes(v);
+        el.style.display=m?'':'none';
+        if(m)n++;
+      }});
+      document.getElementById('em').style.display=n===0?'block':'none';
+    }}
+    </script>'''
+    return page("Trang chủ", body, "home")
 
 @app.route("/list")
 def student_list():
@@ -867,12 +894,11 @@ def student_list():
 
 @app.route("/me")
 def me():
-    sname = session.get("student_name")
-    if not sname: return redirect("/login")
+    sname = request.args.get("name")
+    if not sname: return redirect("/")
     try:
-        # Tìm sinh viên theo tên (khớp với tên tài khoản đã cấp)
-        res = supabase.table("students").select("*").eq("name", sname).execute()
-        if not res.data: return f"Không tìm thấy dữ liệu điểm cho sinh viên: {sname}"
+        res = supabase.table("students").select("*").ilike("name", sname.strip()).execute()
+        if not res.data: return page("Lỗi", f"<div class='card' style='text-align:center; padding:50px;'><h2 style='color:red'>Không tìm thấy sinh viên: {sname}</h2><a href='/'>Quay lại trang chủ</a></div>")
         stu = res.data[0]
     except Exception as e:
         return f"Lỗi đọc dữ liệu: {e}"
@@ -903,7 +929,7 @@ def me():
         <div class="greet-hi">👋 Xin chào, {name}!</div>
         <div class="greet-rl">{rl} • Lớp 26THXD1</div>
       </div>
-      <a href="/change" style="position:relative;z-index:1;padding:11px 22px;background:linear-gradient(135deg,#F59E0B,#EA580C);color:#fff;text-decoration:none;border-radius:12px;font-weight:800;font-size:13.5px;box-shadow:0 4px 16px rgba(245,158,11,.4);white-space:nowrap">🔄 Đổi SV</a>
+      <a href="/" style="position:relative;z-index:1;padding:11px 22px;background:linear-gradient(135deg,#F59E0B,#EA580C);color:#fff;text-decoration:none;border-radius:12px;font-weight:800;font-size:13.5px;box-shadow:0 4px 16px rgba(245,158,11,.4);white-space:nowrap">⬅ Trang chủ</a>
     </div>'''
 
     stats = f'''

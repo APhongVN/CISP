@@ -863,14 +863,15 @@ def student_list():
 
 @app.route("/me")
 def me():
-    sid = session.get("student_id")
-    if not sid: return redirect("/login")
+    sname = session.get("student_name")
+    if not sname: return redirect("/login")
     try:
-        res = supabase.table("students").select("*").eq("user_id", sid).execute()
-        if not res.data: return "Chưa có dữ liệu điểm."
+        # Tìm sinh viên theo tên (khớp với tên tài khoản đã cấp)
+        res = supabase.table("students").select("*").eq("name", sname).execute()
+        if not res.data: return f"Không tìm thấy dữ liệu điểm cho sinh viên: {sname}"
         stu = res.data[0]
-    except:
-        return "Lỗi đọc dữ liệu."
+    except Exception as e:
+        return f"Lỗi đọc dữ liệu: {e}"
     name = stu.get("name", "Sinh Viên")
 
     sc = stu.get("scores", {}) or {}

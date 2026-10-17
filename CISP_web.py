@@ -5,6 +5,11 @@ from pathlib import Path
 from datetime import datetime
 from flask import Flask, request, session, redirect, send_file, abort
 
+from supabase import create_client
+SUPABASE_URL = "https://zebcclcgozhhdalunoch.supabase.co"
+SUPABASE_KEY = "sb_publishable_i3crMi5NBh69XDkz6GFlpw_XUWdI7xa"
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
 import sys as _sys
 if getattr(_sys, "frozen", False):
     BASE = Path(_sys.executable).parent.resolve()

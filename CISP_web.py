@@ -692,10 +692,7 @@ def page(title, body, active=""):
     if (a.getAttribute('href') === location.pathname) a.classList.add('active');
   }});
 }})();
-</script>    <script>
-        // Tu dong cap nhat sau 3 giay
-        setTimeout(function(){{ location.reload(); }}, 3000);
-    </script>
+</script>    
 </body></html>'''
 
 
@@ -724,8 +721,11 @@ def header_bg():
 
 @app.route("/favicon.ico")
 def favicon():
-    if ICON.exists(): return send_file(ICON, mimetype="image/x-icon")
-    if LOGO_CISP.exists(): return send_file(LOGO_CISP, mimetype="image/png")
+    # Uu tien file .ico, neu khong co thi dung logo CISP
+    if ICON.exists(): 
+        return send_file(ICON, mimetype="image/x-icon")
+    if LOGO_CISP.exists(): 
+        return send_file(LOGO_CISP, mimetype="image/png")
     abort(404)
 
 

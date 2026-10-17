@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """CISP Web Server — Flask."""
 import json, secrets
 from pathlib import Path
@@ -71,8 +71,12 @@ def login():
                 return redirect("/")
             else:
                 return "Sai tên đăng nhập hoặc mật khẩu! <a href='/login'>Thử lại</a>"
-        except Exception:
-            return "Lỗi kết nối Server! <a href='/login'>Thử lại</a>"
+        except Exception as e:
+            import traceback
+            error_msg = traceback.format_exc()
+            print("=== LOI DANG NHAP ===")
+            print(error_msg)
+            return f"Lỗi kết nối Server! Chi tiết lỗi: <br><br> <b style='color:red'>{e}</b> <br><br><a href='/login'>Thử lại</a>"
     
     return '''
     <div style="max-width:400px;margin:100px auto;padding:30px;background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.1);text-align:center;font-family:sans-serif;">

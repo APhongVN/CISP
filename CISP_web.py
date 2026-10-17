@@ -694,7 +694,7 @@ def page(title, body, active=""):
 }})();
 </script>    <script>
         // Tu dong cap nhat sau 3 giay
-        setTimeout(function(){ location.reload(); }, 3000);
+        setTimeout(function(){{ location.reload(); }}, 3000);
     </script>
 </body></html>'''
 

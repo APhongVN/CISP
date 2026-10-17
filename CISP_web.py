@@ -44,29 +44,52 @@ app.secret_key = app_secret
 
 
 # =============== BASIC AUTH ===============
-WEB_USER = "cisp"
-WEB_PASS = "26thxd1@DUT"   # <-- DOI MAT KHAU TAI DAY
-
-from functools import wraps
-from flask import Response
-
-def _check_auth():
-    auth = request.authorization
-    return (auth and auth.username == WEB_USER and auth.password == WEB_PASS)
-
+# =============== SESSION AUTH ===============
 @app.before_request
-def _require_auth():
-    # Cho phep logo, favicon, header_bg, file thong bao khong can dang nhap
-    if request.path in ("/favicon.ico", "/logo/bk", "/logo/cisp", "/header_bg"):
+def _require_login():
+    if request.path in ("/favicon.ico", "/logo/bk", "/logo/cisp", "/header_bg", "/login"):
         return
     if request.path.startswith("/announce_file/"):
         return
-    if not _check_auth():
-        return Response(
-            "Can dang nhap de xem trang nay\nCISP Portal - Khoa Xay dung",
-            401,
-            {"WWW-Authenticate": 'Basic realm="CISP Portal"'})
-# =============== END BASIC AUTH ===============
+    if not session.get("student_id"):
+        return redirect("/login")
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+        import hashlib
+        pw_hash = hashlib.sha256(password.encode('utf-8')).hexdigest()
+        
+        try:
+            res = supabase.table("users").select("*").eq("username", username).eq("password", pw_hash).execute()
+            if res.data and res.data[0]["role"] == "student":
+                user = res.data[0]
+                session["student_id"] = user["id"]
+                session["student_name"] = user["full_name"]
+                return redirect("/")
+            else:
+                return "Sai tên đăng nhập hoặc mật khẩu! <a href='/login'>Thử lại</a>"
+        except Exception:
+            return "Lỗi kết nối Server! <a href='/login'>Thử lại</a>"
+    
+    return '''
+    <div style="max-width:400px;margin:100px auto;padding:30px;background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.1);text-align:center;font-family:sans-serif;">
+        <h2 style="color:#0033A0;margin-bottom:20px;">CỔNG THÔNG TIN SINH VIÊN</h2>
+        <form method="POST">
+            <input type="text" name="username" placeholder="Mã sinh viên (MSSV)" required style="width:100%;padding:12px;margin-bottom:15px;border:1px solid #ccc;border-radius:8px;box-sizing:border-box;"><br>
+            <input type="password" name="password" placeholder="Mật khẩu" required style="width:100%;padding:12px;margin-bottom:20px;border:1px solid #ccc;border-radius:8px;box-sizing:border-box;"><br>
+            <button type="submit" style="width:100%;padding:12px;background:#0033A0;color:white;border:none;border-radius:8px;font-weight:bold;cursor:pointer;">ĐĂNG NHẬP</button>
+        </form>
+    </div>
+    '''
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect("/login")
+# =============== END SESSION AUTH ===============
 TEACHER_NAME = "Nguyễn Thanh Hải"
 
 # ── Thống kê CTĐT ──
@@ -745,6 +768,10 @@ def favicon():
 
 @app.route("/")
 def home():
+    return redirect("/me")
+
+@app.route("/list")
+def student_list():
     students = load_students()
     students.sort(key=lambda s: _sort_key(s.get("name", "")))
     kw = (request.args.get("q") or "").strip().lower()
@@ -827,13 +854,15 @@ def home():
 
 @app.route("/me")
 def me():
-    name = request.args.get("name") or session.get("student_name")
-    if not name: return redirect("/")
-    stu = find_student(name)
-    if not stu:
-        session.clear()
-        return redirect("/")
-    session["student_name"] = name
+    sid = session.get("student_id")
+    if not sid: return redirect("/login")
+    try:
+        res = supabase.table("students").select("*").eq("user_id", sid).execute()
+        if not res.data: return "Chưa có dữ liệu điểm."
+        stu = res.data[0]
+    except:
+        return "Lỗi đọc dữ liệu."
+    name = stu.get("name", "Sinh Viên")
 
     sc = stu.get("scores", {}) or {}
     g = _gpa(sc)

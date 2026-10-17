@@ -238,13 +238,20 @@ def _find_students_file():
     return BASE / "students_guest.json"
 
 
-def load_students(): return _load(_find_students_file(), {}).get("students", []) or []
+def load_students():
+    try:
+        resp = supabase.table("students").select("*").execute()
+        return resp.data or []
+    except Exception as e:
+        print(f"Loi tai SV tu Supabase: {e}")
+        return []
 
 
 def find_student(name):
-    for s in load_students():
-        if (s.get("name", "") or "").lower() == name.lower(): return s
-    return None
+    try:
+        resp = supabase.table("students").select("*").ilike("name", name).execute()
+        return resp.data[0] if resp.data else None
+    except Exception: return None
 
 
 def _sort_key(name):
